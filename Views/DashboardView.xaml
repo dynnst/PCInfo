@@ -1,0 +1,167 @@
+<UserControl x:Class="PCNetworkInspector.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:PCNetworkInspector.Helpers"
+             mc:Ignorable="d"
+             Background="{StaticResource ContentBgBrush}">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20">
+
+            <TextBlock Text="Dashboard"
+                       FontSize="22" FontWeight="Bold"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       Margin="0,0,0,6"/>
+            <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="12.5" Margin="0,0,0,20">
+                <Run Text="Son güncelleme: "/>
+                <Run Text="{Binding LastQueryTime}"/>
+            </TextBlock>
+
+            <!-- Big Stats -->
+            <UniformGrid Columns="4" Margin="0,0,0,20">
+                <Border Style="{StaticResource StatCardStyle}" Background="#1565C0">
+                    <StackPanel>
+                        <TextBlock Text="TOPLAM SORGULANAN" FontSize="10" FontWeight="Bold"
+                                   Foreground="#BBDEFB"/>
+                        <TextBlock Text="{Binding TotalQueried}" FontSize="36" FontWeight="Bold"
+                                   Foreground="White"/>
+                        <TextBlock Text="Bilgisayar" FontSize="11" Foreground="#90CAF9"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource StatCardStyle}" Background="#388E3C">
+                    <StackPanel>
+                        <TextBlock Text="ONLINE" FontSize="10" FontWeight="Bold" Foreground="#C8E6C9"/>
+                        <TextBlock Text="{Binding OnlineCount}" FontSize="36" FontWeight="Bold"
+                                   Foreground="White"/>
+                        <TextBlock Text="Erişilebilir" FontSize="11" Foreground="#A5D6A7"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource StatCardStyle}" Background="#C62828">
+                    <StackPanel>
+                        <TextBlock Text="OFFLINE" FontSize="10" FontWeight="Bold" Foreground="#FFCDD2"/>
+                        <TextBlock Text="{Binding OfflineCount}" FontSize="36" FontWeight="Bold"
+                                   Foreground="White"/>
+                        <TextBlock Text="Erişilemeyen" FontSize="11" Foreground="#EF9A9A"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource StatCardStyle}" Background="#00838F">
+                    <StackPanel>
+                        <TextBlock Text="BAŞARI ORANI" FontSize="10" FontWeight="Bold" Foreground="#B2EBF2"/>
+                        <TextBlock FontSize="36" FontWeight="Bold" Foreground="White">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="{}{0:F0}%"
+                                              Converter="{x:Static local:DivideConverter.Instance}">
+                                    <Binding Path="OnlineCount"/>
+                                    <Binding Path="TotalQueried"/>
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                        <TextBlock Text="Erişim Oranı" FontSize="11" Foreground="#80DEEA"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- OS Stats -->
+                <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <TextBlock Text="İŞLETİM SİSTEMİ DAĞILIMI"
+                                   Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,12"/>
+                        <ItemsControl ItemsSource="{Binding OsStats}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Label}"
+                                                   FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"
+                                                   VerticalAlignment="Center" Margin="8,0"/>
+                                        <Border Grid.Column="2" CornerRadius="10" Padding="6,2"
+                                                HorizontalAlignment="Right"
+                                                Background="{Binding Color}">
+                                            <TextBlock Text="{Binding Value}" FontSize="11"
+                                                       FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Henüz sorgulama yapılmadı."
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="12.5" Margin="0,8">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding OsStats.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Manufacturer Stats -->
+                <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="10,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="ÜRETİCİ DAĞILIMI"
+                                   Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,12"/>
+                        <ItemsControl ItemsSource="{Binding ManufacturerStats}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="14"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Label}"
+                                                   FontSize="13" Foreground="{StaticResource TextPrimaryBrush}"
+                                                   VerticalAlignment="Center" Margin="8,0"/>
+                                        <Border Grid.Column="2" CornerRadius="10" Padding="6,2"
+                                                HorizontalAlignment="Right"
+                                                Background="{Binding Color}">
+                                            <TextBlock Text="{Binding Value}" FontSize="11"
+                                                       FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Henüz sorgulama yapılmadı."
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="12.5" Margin="0,8">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ManufacturerStats.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

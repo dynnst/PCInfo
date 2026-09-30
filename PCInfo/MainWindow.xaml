@@ -1,0 +1,112 @@
+﻿<Window x:Class="PCNetworkInspector.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:PCNetworkInspector.Views"
+        xmlns:local="clr-namespace:PCNetworkInspector.Helpers"
+        Title="PC Network Inspector"
+        Height="820" Width="1280"
+        MinHeight="600" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource ContentBgBrush}">
+
+    <Window.Resources>
+        <local:PageVisibilityConverter x:Key="PageVis"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="{StaticResource SidebarBgBrush}">
+            <DockPanel>
+                <!-- Logo -->
+                <Border DockPanel.Dock="Top"
+                        Background="#0D1B6E"
+                        Padding="16,18">
+                    <StackPanel>
+                        <TextBlock Text="🖥 PC Network"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="White"/>
+                        <TextBlock Text="Inspector"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="#64B5F6"/>
+                        <TextBlock Text="v1.0"
+                                   FontSize="10"
+                                   Foreground="#5C6BC0"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Nav Items -->
+                <StackPanel DockPanel.Dock="Top" Margin="0,12,0,0">
+                    <Button x:Name="BtnDashboard"
+                            Style="{StaticResource NavButtonActiveStyle}"
+                            Click="NavButton_Click" Tag="0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📊" FontSize="15" Margin="0,0,10,0"/>
+                            <TextBlock Text="Dashboard" FontSize="13.5" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnQuery"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="NavButton_Click" Tag="1">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🔍" FontSize="15" Margin="0,0,10,0"/>
+                            <TextBlock Text="Bilgisayar Sorgula" FontSize="13.5" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnBulkQuery"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="NavButton_Click" Tag="2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📋" FontSize="15" Margin="0,0,10,0"/>
+                            <TextBlock Text="Toplu Sorgulama" FontSize="13.5" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnSettings"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="NavButton_Click" Tag="3">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⚙" FontSize="15" Margin="0,0,10,0"/>
+                            <TextBlock Text="Ayarlar" FontSize="13.5" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Bottom info -->
+                <Border DockPanel.Dock="Bottom" Padding="16,12">
+                    <TextBlock TextWrapping="Wrap" FontSize="10.5" Foreground="#4A5080">
+                        Veriler anlık olarak WMI/CIM üzerinden alınır. Hiçbir bilgisayar bilgisi yerel olarak saklanmaz.
+                    </TextBlock>
+                </Border>
+
+                <StackPanel/>
+            </DockPanel>
+        </Border>
+
+        <!-- Content Area -->
+        <Grid Grid.Column="1">
+            <views:DashboardView x:Name="PageDashboard"
+                                 DataContext="{Binding Dashboard}"
+                                 Visibility="Visible"/>
+
+            <views:QueryView x:Name="PageQuery"
+                             DataContext="{Binding Query}"
+                             Visibility="Collapsed"/>
+
+            <views:BulkQueryView x:Name="PageBulkQuery"
+                                 DataContext="{Binding BulkQuery}"
+                                 Visibility="Collapsed"/>
+
+            <views:SettingsView x:Name="PageSettings"
+                                DataContext="{Binding Settings}"
+                                Visibility="Collapsed"/>
+        </Grid>
+    </Grid>
+</Window>
