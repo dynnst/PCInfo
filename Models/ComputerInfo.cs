@@ -29,6 +29,9 @@ namespace PCNetworkInspector.Models
         public WindowsInfo? Windows { get; set; }
         public List<NetworkAdapterInfo> NetworkAdapters { get; set; } = new();
         public List<InstalledSoftware> InstalledSoftware { get; set; } = new();
+        public List<MonitorInfo> Monitors { get; set; } = new();
+        public List<UsbDeviceInfo> UsbDevices { get; set; } = new();
+        public List<PrinterInfo> Printers { get; set; } = new();
     }
 
     public class CpuInfo

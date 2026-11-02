@@ -10,11 +10,14 @@ namespace PCNetworkInspector.Services
             string wmiClass,
             ConnectionCredentials credentials,
             string? condition = null,
-            CancellationToken cancellationToken = default);
+            CancellationToken cancellationToken = default,
+            string wmiNamespace = @"root\cimv2");
 
         Task<ConnectionTestResult> TestConnectionAsync(
             string target,
             ConnectionCredentials credentials,
             CancellationToken cancellationToken = default);
+
+        CimSession CreateSession(string target, ConnectionCredentials credentials);
     }
 }

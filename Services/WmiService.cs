@@ -2,8 +2,7 @@ using Microsoft.Management.Infrastructure;
 using Microsoft.Management.Infrastructure.Options;
 using PCNetworkInspector.Models;
 using System.Net.NetworkInformation;
-using System.Runtime.InteropServices;
-using System.Security;
+using System.Net.Sockets;
 
 namespace PCNetworkInspector.Services
 {
@@ -16,27 +15,18 @@ namespace PCNetworkInspector.Services
         {
             var result = new ConnectionTestResult();
 
-            // Step 1: Ping
+            // Step 1: Reachability (Ping + Port 135 fallback for firewall-blocked ICMP)
             bool isLocalhost = IsLocalhost(target);
             if (!isLocalhost)
             {
-                try
-                {
-                    using var ping = new Ping();
-                    var reply = await Task.Run(() => ping.Send(target, 3000), cancellationToken);
-                    result.NetworkReachable = reply.Status == IPStatus.Success;
-                }
-                catch
-                {
-                    result.NetworkReachable = false;
-                }
+                result.NetworkReachable = await CheckReachabilityAsync(target, cancellationToken);
 
                 if (!result.NetworkReachable)
                 {
                     result.ErrorMessage = "Bilgisayara ağ üzerinden ulaşılamıyor.";
                     result.Suggestions.Add("Bilgisayar kapalı olabilir.");
                     result.Suggestions.Add("IP adresi veya bilgisayar adı yanlış olabilir.");
-                    result.Suggestions.Add("Ağ bağlantısı yok veya bilgisayar farklı bir ağ segmentinde.");
+                    result.Suggestions.Add("Ağ bağlantısı yok veya güvenlik duvarı tüm portları engelliyor.");
                     return result;
                 }
             }
@@ -45,7 +35,7 @@ namespace PCNetworkInspector.Services
                 result.NetworkReachable = true;
             }
 
-            // Step 2: WMI
+            // Step 2: WMI / CIM Test
             try
             {
                 var instances = await QueryAsync(target, "Win32_ComputerSystem", credentials,
@@ -67,7 +57,7 @@ namespace PCNetworkInspector.Services
                 result.AuthorizationSuccess = false;
                 result.ErrorMessage = "Yetkilendirme hatası: Erişim reddedildi.";
                 result.Suggestions.Add("Kullanıcının uzak bilgisayarda admin yetkisi olmayabilir.");
-                result.Suggestions.Add("Domain hesabı ile tekrar deneyin.");
+                result.Suggestions.Add("Domain veya yerel yönetici hesabı ile tekrar deneyin.");
             }
             catch (Exception ex)
             {
@@ -75,10 +65,45 @@ namespace PCNetworkInspector.Services
                 result.ErrorMessage = ex.Message;
                 result.Suggestions.Add("Windows Firewall WMI bağlantısını engelliyor olabilir.");
                 result.Suggestions.Add("WMI servisi (winmgmt) çalışmıyor olabilir.");
-                result.Suggestions.Add("Uzak bilgisayarda 'Windows Management Instrumentation' servisi başlatın.");
+                result.Suggestions.Add("Uzak bilgisayarda 'Windows Management Instrumentation' kuralını açın.");
             }
 
             return result;
+        }
+
+        private static async Task<bool> CheckReachabilityAsync(string target, CancellationToken ct)
+        {
+            // 1. Try standard Ping
+            try
+            {
+                using var ping = new Ping();
+                var reply = await ping.SendPingAsync(target, 2000);
+                if (reply.Status == IPStatus.Success) return true;
+            }
+            catch { }
+
+            // 2. Fallback: Many corporate Windows machines drop ICMP ping but have TCP 135 (RPC) or 445 (SMB) open!
+            try
+            {
+                using var tcpClient = new TcpClient();
+                var connectTask = tcpClient.ConnectAsync(target, 135);
+                var timeoutTask = Task.Delay(2000, ct);
+                var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+                if (completedTask == connectTask && tcpClient.Connected) return true;
+            }
+            catch { }
+
+            try
+            {
+                using var tcpClient = new TcpClient();
+                var connectTask = tcpClient.ConnectAsync(target, 445);
+                var timeoutTask = Task.Delay(2000, ct);
+                var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+                if (completedTask == connectTask && tcpClient.Connected) return true;
+            }
+            catch { }
+
+            return false;
         }
 
         public async Task<IEnumerable<CimInstance>> QueryAsync(
@@ -86,7 +111,8 @@ namespace PCNetworkInspector.Services
             string wmiClass,
             ConnectionCredentials credentials,
             string? condition = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string wmiNamespace = @"root\cimv2")
         {
             return await Task.Run(() =>
             {
@@ -96,38 +122,41 @@ namespace PCNetworkInspector.Services
                     ? $"SELECT * FROM {wmiClass}"
                     : $"SELECT * FROM {wmiClass} WHERE {condition}";
 
-                bool isLocal = IsLocalhost(target);
-                CimSession session;
-
-                if (isLocal)
-                {
-                    session = CimSession.Create(null);
-                }
-                else if (credentials.HasCredentials)
-                {
-                    var options = BuildSessionOptions(credentials);
-                    session = CimSession.Create(target, options);
-                }
-                else
-                {
-                    var options = new DComSessionOptions
-                    {
-                        Timeout = TimeSpan.FromSeconds(30)
-                    };
-                    session = CimSession.Create(target, options);
-                }
+                using var session = CreateSession(target, credentials);
 
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var results = session.QueryInstances(@"root\cimv2", "WQL", query);
+                    var results = session.QueryInstances(wmiNamespace, "WQL", query);
                     return results.ToList();
                 }
                 finally
                 {
-                    session.Dispose();
                 }
             }, cancellationToken);
+        }
+
+        public CimSession CreateSession(string target, ConnectionCredentials credentials)
+        {
+            bool isLocal = IsLocalhost(target);
+            if (isLocal)
+            {
+                return CimSession.Create(null);
+            }
+
+            if (credentials.HasCredentials)
+            {
+                var options = BuildSessionOptions(credentials);
+                return CimSession.Create(target, options);
+            }
+            else
+            {
+                var options = new DComSessionOptions
+                {
+                    Timeout = TimeSpan.FromSeconds(30)
+                };
+                return CimSession.Create(target, options);
+            }
         }
 
         private static DComSessionOptions BuildSessionOptions(ConnectionCredentials credentials)
@@ -165,24 +194,23 @@ namespace PCNetworkInspector.Services
             var msg = cex.Message.ToLowerInvariant();
             if (msg.Contains("access") || msg.Contains("denied") || msg.Contains("0x80070005"))
             {
-                result.Suggestions.Add("Kullanıcının uzak bilgisayarda gerekli yetkisi olmayabilir.");
-                result.Suggestions.Add("Domain admin hesabıyla deneyin.");
+                result.Suggestions.Add("Kullanıcının uzak bilgisayarda admin yetkisi olmayabilir.");
+                result.Suggestions.Add("Domain admin veya hedef makinedeki yerel yönetici hesabıyla deneyin.");
             }
             else if (msg.Contains("rpc") || msg.Contains("0x800706ba"))
             {
-                result.Suggestions.Add("Windows Firewall WMI bağlantısını engelliyor olabilir.");
-                result.Suggestions.Add("Uzak bilgisayarda 'Windows Uzaktan Yönetim' (WinRM) veya WMI kurallarını etkinleştirin.");
+                result.Suggestions.Add("Windows Firewall WMI/RPC bağlantısını engelliyor olabilir.");
+                result.Suggestions.Add("Uzak bilgisayarda Windows Firewall 'Windows Yönetim Araçları (WMI)' kuralını etkinleştirin.");
             }
             else if (msg.Contains("0x80041003"))
             {
-                result.Suggestions.Add("WMI servisi çalışmıyor olabilir.");
-                result.Suggestions.Add("Uzak bilgisayarda 'winmgmt' servisini başlatın.");
+                result.Suggestions.Add("WMI servisi çalışmıyor veya izinleri kısıtlanmış olabilir.");
+                result.Suggestions.Add("Uzak bilgisayarda 'winmgmt' servisini yeniden başlatın.");
             }
             else
             {
                 result.Suggestions.Add("Windows Firewall WMI bağlantısını engelliyor olabilir.");
                 result.Suggestions.Add("WMI servisi (winmgmt) çalışmıyor olabilir.");
-                result.Suggestions.Add("Uzak bilgisayarda 'Uzak Kayıt Defteri' servisinin çalıştığından emin olun.");
             }
         }
     }

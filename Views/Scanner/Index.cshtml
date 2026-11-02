@@ -1,0 +1,260 @@
+@{
+    ViewData["Title"] = "Akıllı Ağ Tarayıcısı";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1">Akıllı Ağ Tarayıcısı & Otomatik Keşif</h3>
+        <p class="text-muted mb-0">Belirtilen IP bloğundaki PC, Hikvision kamera ve yazıcıları otomatik tespit eder</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button id="btnSaveToInventory" class="btn btn-success d-flex align-items-center gap-2" style="display:none;" onclick="saveSelectedDevices()">
+            <i class="bi bi-cloud-arrow-up"></i> <span id="saveCount">0</span> Cihazı Envantere Kaydet
+        </button>
+    </div>
+</div>
+
+<!-- Scanner Control Card -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label fw-bold">Hedef IP Bloğu</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-broadcast"></i></span>
+                    <input type="text" id="targetRange" class="form-control font-monospace" value="@ViewBag.DefaultRange" placeholder="10.7.202.1 - 10.7.202.500 veya 10.7.202.0/24" />
+                </div>
+                <div class="form-text">Örn: <code>10.7.202.1 - 10.7.202.500</code> veya virgülle ayrılmış IP'ler</div>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Eşzamanlı Bağlantı</label>
+                <select id="concurrency" class="form-select">
+                    <option value="15">15 Bağlantı (Hafif)</option>
+                    <option value="30" selected>30 Bağlantı (Önerilen)</option>
+                    <option value="50">50 Bağlantı (Hızlı)</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Zaman Aşımı</label>
+                <select id="timeoutMs" class="form-select">
+                    <option value="800">800 ms (Çok Hızlı)</option>
+                    <option value="1200" selected>1200 ms (Dengeli)</option>
+                    <option value="2000">2000 ms (Hassas)</option>
+                </select>
+            </div>
+
+            <div class="col-md-3 d-flex gap-2">
+                <button id="btnStart" class="btn btn-primary w-100 py-2 d-flex align-items-center justify-content-center gap-2" onclick="startScan()">
+                    <i class="bi bi-play-fill fs-5"></i> Taramayı Başlat
+                </button>
+                <button id="btnStop" class="btn btn-danger py-2" style="display:none;" onclick="stopScan()">
+                    <i class="bi bi-stop-fill fs-5"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Bar -->
+<div id="progressCard" class="card mb-4" style="display:none;">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold" id="progressStatus">Tarama devam ediyor...</span>
+            <span class="badge bg-primary fs-6" id="progressPercent">0%</span>
+        </div>
+        <div class="progress" style="height: 12px;">
+            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 0%;"></div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mt-2 small text-muted">
+            <span id="progressCounts">0 / 0 tamamlandı</span>
+            <span><strong class="text-success" id="progressOnline">0</strong> aktif cihaz bulundu</span>
+        </div>
+    </div>
+</div>
+
+<!-- Discovered Devices Live Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-list-check text-primary"></i>
+            <span>Bulunan Aktif Cihazlar (<strong id="tableCount">0</strong>)</span>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="selectAll" checked onchange="toggleSelectAll(this)" />
+            <label class="form-check-label small fw-semibold" for="selectAll">Tümünü Seç</label>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" id="discoveryTable">
+                <thead class="table-light">
+                    <tr>
+                        <th width="40"></th>
+                        <th>IP Adresi</th>
+                        <th>Cihaz Türü</th>
+                        <th>Host / Cihaz Adı</th>
+                        <th>Açık Portlar & Parmak İzi</th>
+                        <th>Yanıt Süresi</th>
+                        <th class="text-end">Hızlı Erişim</th>
+                    </tr>
+                </thead>
+                <tbody id="discoveryTbody">
+                    <tr id="emptyRow">
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="bi bi-broadcast fs-2 d-block mb-2 text-secondary"></i>
+                            Henüz tarama başlatılmadı.<br />
+                            Yukarıdaki <strong>"Taramayı Başlat"</strong> butonuna basarak 10.7.202.x bloğundaki cihazları anlık olarak keşfedebilirsiniz.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let discoveredItems = [];
+    let connection = null;
+
+    // Setup SignalR connection
+    function initSignalR() {
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl("/scannerHub")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on("ScanStarted", (total) => {
+            document.getElementById('progressCard').style.display = 'block';
+            document.getElementById('btnStart').style.display = 'none';
+            document.getElementById('btnStop').style.display = 'block';
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressPercent').innerText = '0%';
+            document.getElementById('progressCounts').innerText = `0 / ${total} tamamlandı`;
+            document.getElementById('progressOnline').innerText = '0';
+
+            discoveredItems = [];
+            document.getElementById('discoveryTbody').innerHTML = '';
+            document.getElementById('tableCount').innerText = '0';
+            document.getElementById('btnSaveToInventory').style.display = 'none';
+        });
+
+        connection.on("ScanProgress", (done, total, online) => {
+            const percent = Math.round((done / total) * 100);
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressPercent').innerText = `${percent}%`;
+            document.getElementById('progressCounts').innerText = `${done} / ${total} tamamlandı`;
+            document.getElementById('progressOnline').innerText = online;
+        });
+
+        connection.on("DeviceDiscovered", (device) => {
+            discoveredItems.push(device);
+            renderDeviceRow(device);
+            document.getElementById('tableCount').innerText = discoveredItems.length;
+
+            const btnSave = document.getElementById('btnSaveToInventory');
+            btnSave.style.display = 'inline-flex';
+            document.getElementById('saveCount').innerText = discoveredItems.length;
+        });
+
+        connection.on("ScanCompleted", (online, total) => {
+            document.getElementById('btnStart').style.display = 'block';
+            document.getElementById('btnStop').style.display = 'none';
+            document.getElementById('progressStatus').innerText = '✓ Tarama Tamamlandı!';
+            document.getElementById('progressBar').classList.remove('progress-bar-animated');
+        });
+
+        connection.start().catch(err => console.error("SignalR Bağlantı Hatası:", err));
+    }
+
+    function renderDeviceRow(dev) {
+        const tbody = document.getElementById('discoveryTbody');
+        const emptyRow = document.getElementById('emptyRow');
+        if (emptyRow) emptyRow.remove();
+
+        const tr = document.createElement('tr');
+        tr.id = `dev-${dev.IpAddress.replace(/\./g, '_')}`;
+
+        let typeBadge = '';
+        let quickAction = '';
+
+        if (dev.DeviceType === 1) { // PC
+            typeBadge = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="bi bi-pc-display me-1"></i> Windows PC</span>';
+            quickAction = `<a href="/Inspector/Index?ip=${dev.IpAddress}" class="btn btn-sm btn-outline-primary" target="_blank"><i class="bi bi-search me-1"></i> WMI Sorgula</a>`;
+        } else if (dev.DeviceType === 2) { // Hikvision
+            typeBadge = '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-camera-video me-1"></i> Hikvision Kamera</span>';
+            quickAction = `<a href="/Camera/Index?ip=${dev.IpAddress}" class="btn btn-sm btn-outline-warning" target="_blank"><i class="bi bi-eye me-1"></i> Kamera Görüntüle</a>`;
+        } else if (dev.DeviceType === 3) { // Printer
+            typeBadge = '<span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"><i class="bi bi-printer me-1"></i> Yazıcı</span>';
+        } else {
+            typeBadge = '<span class="badge bg-light text-dark border">Cihaz</span>';
+        }
+
+        tr.innerHTML = `
+            <td>
+                <input class="form-check-input item-check" type="checkbox" checked value="${dev.IpAddress}" onchange="updateSelectedCount()" />
+            </td>
+            <td class="fw-bold font-monospace">${dev.IpAddress}</td>
+            <td>${typeBadge}</td>
+            <td class="fw-semibold">${dev.HostName || '—'}</td>
+            <td><small class="text-muted">${dev.Details || ''}</small></td>
+            <td><span class="badge bg-light text-dark font-monospace">${dev.ResponseTimeMs} ms</span></td>
+            <td class="text-end">${quickAction}</td>
+        `;
+
+        tbody.appendChild(tr);
+    }
+
+    function toggleSelectAll(cb) {
+        document.querySelectorAll('.item-check').forEach(c => c.checked = cb.checked);
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const count = document.querySelectorAll('.item-check:checked').length;
+        document.getElementById('saveCount').innerText = count;
+    }
+
+    async function startScan() {
+        const range = document.getElementById('targetRange').value;
+        const concurrency = parseInt(document.getElementById('concurrency').value);
+        const timeoutMs = parseInt(document.getElementById('timeoutMs').value);
+
+        await fetch(`/Scanner/StartScan?rangeInput=${encodeURIComponent(range)}&concurrency=${concurrency}&timeoutMs=${timeoutMs}`, {
+            method: 'POST'
+        });
+    }
+
+    async function stopScan() {
+        await fetch('/Scanner/StopScan', { method: 'POST' });
+    }
+
+    async function saveSelectedDevices() {
+        const selectedIps = Array.from(document.querySelectorAll('.item-check:checked')).map(c => c.value);
+        const toSave = discoveredItems.filter(d => selectedIps.includes(d.IpAddress));
+
+        if (toSave.length === 0) {
+            alert('Kaydedilecek cihaz seçilmedi.');
+            return;
+        }
+
+        const res = await fetch('/Scanner/SaveToInventory', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(toSave)
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message);
+            window.location.href = '/Inventory/Index';
+        } else {
+            alert('Kaydetme hatası: ' + data.message);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', initSignalR);
+</script>
+}

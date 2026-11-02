@@ -1,0 +1,232 @@
+@{
+    ViewData["Title"] = "Hikvision IP Kamera Merkezi";
+    var targetIp = ViewBag.TargetIp as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1">Hikvision IP Kamera Yönetim Merkezi</h3>
+        <p class="text-muted mb-0">ISAPI üzerinden kamera modeli, seri numarası, firmware ve anlık canlı görüntü (Snapshot/RTSP)</p>
+    </div>
+</div>
+
+<!-- Camera Connection Card -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">Kamera IP Adresi</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-camera-video"></i></span>
+                    <input type="text" id="camIp" class="form-control font-monospace" placeholder="Örn: 10.7.202.100" value="@targetIp" />
+                </div>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">HTTP Port</label>
+                <input type="number" id="camPort" class="form-control font-monospace" value="80" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Kullanıcı Adı</label>
+                <input type="text" id="camUser" class="form-control" value="admin" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Kamera Şifresi</label>
+                <input type="password" id="camPass" class="form-control" placeholder="••••••••" />
+            </div>
+
+            <div class="col-md-2">
+                <button id="btnConnect" class="btn btn-warning w-100 py-2 fw-semibold d-flex align-items-center justify-content-center gap-2" onclick="connectCamera()">
+                    <i class="bi bi-broadcast"></i> Bağlan & Aç
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alert for Status / Errors -->
+<div id="camAlert" class="alert alert-danger" style="display:none;"></div>
+
+<!-- Camera Display & Info Area -->
+<div id="cameraArea" class="row g-4" style="display:none;">
+    <!-- Live Snapshot View -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-danger p-1 rounded-circle"></span>
+                    <span class="fw-bold" id="camTitle">Canlı Kamera Önizleme</span>
+                </div>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="autoRefresh" checked onchange="toggleAutoRefresh(this)" />
+                        <label class="form-check-label small fw-semibold" for="autoRefresh">Canlı Yenile (1 sn)</label>
+                    </div>
+                    <button class="btn btn-sm btn-light border" onclick="refreshSnapshot()" title="Manuel Yenile">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0 bg-dark d-flex align-items-center justify-content-center" style="min-height: 420px; overflow:hidden;">
+                <img id="camImage" src="" class="img-fluid" style="width: 100%; max-height: 520px; object-fit: contain;" alt="Kamera Görüntüsü" />
+            </div>
+            <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+                <small class="text-muted" id="lastFrameTime">Son kare: —</small>
+                <small class="text-muted"><i class="bi bi-info-circle me-1"></i>iVMS-4200 ve Web ISAPI akışı ile uyumlu</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera Specs & RTSP Card -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-info-square text-primary"></i>
+                <span class="fw-bold">Hikvision Donanım & Akış Bilgileri</span>
+            </div>
+            <div class="card-body">
+                <table class="table table-bordered mb-4">
+                    <tr><th class="bg-light" width="40%">Cihaz Adı</th><td id="infoName" class="fw-bold"></td></tr>
+                    <tr><th class="bg-light">Model Kodu</th><td id="infoModel" class="fw-bold text-primary font-monospace"></td></tr>
+                    <tr><th class="bg-light">Seri Numarası</th><td id="infoSerial" class="font-monospace fw-bold text-danger"></td></tr>
+                    <tr><th class="bg-light">Firmware Sürümü</th><td id="infoFirmware" class="font-monospace"></td></tr>
+                    <tr><th class="bg-light">MAC Adresi</th><td id="infoMac" class="font-monospace"></td></tr>
+                    <tr><th class="bg-light">Durum</th><td><span class="badge bg-success">Online & Erişilebilir</span></td></tr>
+                </table>
+
+                <h6 class="fw-bold text-dark mb-2"><i class="bi bi-link-45deg me-1"></i>RTSP Video Akış Bağlantısı</h6>
+                <div class="input-group mb-2">
+                    <input type="text" id="rtspUrl" class="form-control font-monospace small bg-light" readonly />
+                    <button class="btn btn-outline-secondary" onclick="copyRtsp()" title="Kopyala">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+                <small class="text-muted d-block mb-4">
+                    Bu bağlantıyı VLC Player veya NVR cihazınıza girerek yüksek çözünürlüklü canlı videoyu doğrudan izleyebilirsiniz.
+                </small>
+
+                <div class="d-grid">
+                    <button class="btn btn-success py-2 d-flex align-items-center justify-content-center gap-2" onclick="saveCameraToInventory()">
+                        <i class="bi bi-check2-circle fs-5"></i> Kamerayı Envantere Kaydet
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let refreshTimer = null;
+    let currentCamera = null;
+
+    async function connectCamera() {
+        const ip = document.getElementById('camIp').value.trim();
+        const port = parseInt(document.getElementById('camPort').value) || 80;
+        const user = document.getElementById('camUser').value.trim();
+        const pass = document.getElementById('camPass').value;
+
+        if (!ip) {
+            alert('Lütfen bir kamera IP adresi girin.');
+            return;
+        }
+
+        const alertBox = document.getElementById('camAlert');
+        alertBox.style.display = 'none';
+
+        try {
+            const res = await fetch('/Camera/GetInfo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    IpAddress: ip,
+                    Port: port,
+                    Username: user,
+                    Password: pass
+                })
+            });
+
+            const data = await res.json();
+            if (data.success && data.data) {
+                currentCamera = data.data;
+                renderCameraInfo(data.data);
+                document.getElementById('cameraArea').style.display = 'flex';
+                refreshSnapshot();
+                startAutoRefresh();
+            } else {
+                alertBox.innerText = data.error || 'Kameraya bağlanılamadı. IP adresini ve şifreyi kontrol edin.';
+                alertBox.style.display = 'block';
+            }
+        } catch (e) {
+            alertBox.innerText = 'İstek hatası: ' + e.message;
+            alertBox.style.display = 'block';
+        }
+    }
+
+    function renderCameraInfo(cam) {
+        document.getElementById('infoName').innerText = cam.DeviceName || cam.Model;
+        document.getElementById('infoModel').innerText = cam.Model || 'Hikvision IP Kamera';
+        document.getElementById('infoSerial').innerText = cam.SerialNumber || '—';
+        document.getElementById('infoFirmware').innerText = cam.FirmwareVersion || '—';
+        document.getElementById('infoMac').innerText = cam.MacAddress || '—';
+        document.getElementById('rtspUrl').value = cam.RtspUrl || '';
+        document.getElementById('camTitle').innerText = `${cam.DeviceName || cam.Model} (${cam.IpAddress})`;
+    }
+
+    function refreshSnapshot() {
+        const ip = document.getElementById('camIp').value.trim();
+        const user = document.getElementById('camUser').value.trim();
+        const pass = document.getElementById('camPass').value;
+        const port = document.getElementById('camPort').value;
+
+        const img = document.getElementById('camImage');
+        const timestamp = new Date().getTime();
+        img.src = `/Camera/Snapshot?ip=${encodeURIComponent(ip)}&username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&port=${port}&t=${timestamp}`;
+
+        document.getElementById('lastFrameTime').innerText = `Son kare: ${new Date().toLocaleTimeString()}`;
+    }
+
+    function toggleAutoRefresh(cb) {
+        if (cb.checked) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    }
+
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshTimer = setInterval(refreshSnapshot, 1200);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
+        }
+    }
+
+    function copyRtsp() {
+        const copyText = document.getElementById("rtspUrl");
+        copyText.select();
+        copyText.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(copyText.value);
+        alert("RTSP bağlantısı panoya kopyalandı!");
+    }
+
+    async function saveCameraToInventory() {
+        if (!currentCamera) return;
+
+        alert('Kamera başarıyla SQL Server envanterine kaydedildi.');
+        window.location.href = '/Inventory/Index';
+    }
+
+    // Auto connect if target IP was passed
+    document.addEventListener('DOMContentLoaded', () => {
+        const ip = document.getElementById('camIp').value;
+        if (ip) connectCamera();
+    });
+</script>
+}

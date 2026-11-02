@@ -16,22 +16,30 @@ namespace PCNetworkInspector.Services
         {
             var result = new List<InstalledSoftware>();
 
-            // Win32_Product is slow and can trigger repairs — use registry via WMI instead
-            await QueryRegistryPathAsync(target, credentials,
+            // Query registry paths via CIM StdRegProv (fast and does not trigger MSI self-repair)
+            await QueryRegistryViaCimAsync(target, credentials,
                 @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                 "x64", result, cancellationToken);
 
-            await QueryRegistryPathAsync(target, credentials,
+            await QueryRegistryViaCimAsync(target, credentials,
                 @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
                 "x86", result, cancellationToken);
 
+            // If registry query returned nothing, fallback to Win32_Product
+            if (result.Count == 0)
+            {
+                await TryWin32ProductAsync(target, credentials, result, cancellationToken);
+            }
+
             return result
                 .Where(s => !string.IsNullOrWhiteSpace(s.Name))
+                .GroupBy(s => s.Name)
+                .Select(g => g.First())
                 .OrderBy(s => s.Name)
                 .ToList();
         }
 
-        private async Task QueryRegistryPathAsync(
+        private async Task QueryRegistryViaCimAsync(
             string target,
             ConnectionCredentials credentials,
             string regPath,
@@ -39,46 +47,13 @@ namespace PCNetworkInspector.Services
             List<InstalledSoftware> result,
             CancellationToken cancellationToken)
         {
-            try
-            {
-                // Use StdRegProv via WMI to read registry
-                var instances = await _wmi.QueryAsync(target, "Win32_Product", credentials,
-                    cancellationToken: cancellationToken);
-
-                // Win32_Product approach as fallback (slow but works)
-                // We try registry first via CIM
-                var regItems = await QueryRegistryViaCimAsync(target, credentials, regPath, arch, cancellationToken);
-                result.AddRange(regItems);
-            }
-            catch
-            {
-                // If registry query fails, try Win32_Product
-                await TryWin32ProductAsync(target, credentials, result, cancellationToken);
-            }
-        }
-
-        private async Task<List<InstalledSoftware>> QueryRegistryViaCimAsync(
-            string target,
-            ConnectionCredentials credentials,
-            string regPath,
-            string arch,
-            CancellationToken cancellationToken)
-        {
-            var result = new List<InstalledSoftware>();
-
             await Task.Run(() =>
             {
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    bool isLocal = string.IsNullOrWhiteSpace(target) ||
-                                   target.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-                                   target == "127.0.0.1";
-
-                    using var session = isLocal
-                        ? Microsoft.Management.Infrastructure.CimSession.Create(null)
-                        : Microsoft.Management.Infrastructure.CimSession.Create(target);
+                    using var session = _wmi.CreateSession(target, credentials);
 
                     const uint HKLM = 0x80000002;
 
@@ -103,6 +78,9 @@ namespace PCNetworkInspector.Services
                             string name = ReadRegString(session, HKLM, fullPath, "DisplayName");
                             if (string.IsNullOrWhiteSpace(name)) continue;
 
+                            // Skip Windows updates and hotfixes
+                            if (name.StartsWith("KB") || name.StartsWith("Update for")) continue;
+
                             string version = ReadRegString(session, HKLM, fullPath, "DisplayVersion");
                             string publisher = ReadRegString(session, HKLM, fullPath, "Publisher");
                             string installDate = FormatInstallDate(ReadRegString(session, HKLM, fullPath, "InstallDate"));
@@ -119,14 +97,12 @@ namespace PCNetworkInspector.Services
                     }
                 }
                 catch (OperationCanceledException) { throw; }
-                catch { /* ignore per-registry errors */ }
+                catch { /* ignore registry query errors */ }
             }, cancellationToken);
-
-            return result;
         }
 
         private static string ReadRegString(
-            Microsoft.Management.Infrastructure.CimSession session,
+            CimSession session,
             uint hive,
             string path,
             string valueName)
@@ -155,9 +131,6 @@ namespace PCNetworkInspector.Services
         {
             try
             {
-                // Only do this if result is empty to avoid duplication
-                if (result.Count > 0) return;
-
                 var instances = await _wmi.QueryAsync(target, "Win32_Product", credentials,
                     cancellationToken: cancellationToken);
 

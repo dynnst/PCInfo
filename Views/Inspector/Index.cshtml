@@ -1,0 +1,521 @@
+@{
+    ViewData["Title"] = "Bilgisayar Donanım Sorgula";
+    var targetIp = ViewBag.TargetIp as string;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1">Bilgisayar Donanım & Sistem Sorgulama</h3>
+        <p class="text-muted mb-0">WMI/CIM üzerinden işlemci, RAM, diskler, bağlı monitörler (seri no ile) ve yazılımları inceler</p>
+    </div>
+    <div id="exportButtons" class="d-flex gap-2" style="display:none !important;">
+        <button class="btn btn-outline-success" onclick="downloadExport('excel')">
+            <i class="bi bi-file-earmark-excel me-1"></i> Excel İndir
+        </button>
+        <button class="btn btn-outline-danger" onclick="downloadExport('pdf')">
+            <i class="bi bi-file-earmark-pdf me-1"></i> PDF İndir
+        </button>
+    </div>
+</div>
+
+<!-- Input Card -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-5">
+                <label class="form-label fw-bold">Hedef IP veya Bilgisayar Adı</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-display"></i></span>
+                    <input type="text" id="target" class="form-control font-monospace" placeholder="Örn: 10.7.202.15 veya PC-01" value="@targetIp" />
+                </div>
+            </div>
+
+            <div class="col-md-4 d-flex align-items-center pt-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="useCurrentUser" checked onchange="toggleCredentials(this)" />
+                    <label class="form-check-label fw-semibold" for="useCurrentUser">
+                        Mevcut Windows Kimliği ile Bağlan
+                    </label>
+                </div>
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end">
+                <button id="btnQuery" class="btn btn-primary w-100 py-2 d-flex align-items-center justify-content-center gap-2" onclick="queryPc()">
+                    <i class="bi bi-search"></i> Bilgileri Getir
+                </button>
+            </div>
+        </div>
+
+        <!-- Custom Credentials (collapsed by default) -->
+        <div id="credentialsRow" class="row g-3 mt-2 pt-3 border-top" style="display:none;">
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Kullanıcı Adı</label>
+                <input type="text" id="username" class="form-control" placeholder="Administrator" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Domain (İsteğe bağlı)</label>
+                <input type="text" id="domain" class="form-control" placeholder="SIRKET" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Şifre</label>
+                <input type="password" id="password" class="form-control" placeholder="••••••••" />
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading spinner -->
+<div id="loadingCard" class="card mb-4 text-center py-5" style="display:none;">
+    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+    <h5 class="fw-bold" id="loadingText">WMI üzerinden donanım bilgileri çekiliyor...</h5>
+    <p class="text-muted small">İşlemci, RAM, diskler ve bağlı monitörler listeleniyor, lütfen bekleyin</p>
+</div>
+
+<!-- Error Alert -->
+<div id="errorAlert" class="alert alert-danger" style="display:none;"></div>
+
+<!-- Results Card with Tabs -->
+<div id="resultCard" class="card" style="display:none;">
+    <div class="card-header border-bottom-0 pb-0">
+        <ul class="nav nav-tabs card-header-tabs" id="pcTabs" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabSystem">
+                    <i class="bi bi-info-circle me-1"></i> Sistem & OS
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCpuRam">
+                    <i class="bi bi-cpu me-1"></i> İşlemci & RAM
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabDisks">
+                    <i class="bi bi-hdd me-1"></i> Diskler & Depolama
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link text-primary fw-bold" data-bs-toggle="tab" data-bs-target="#tabMonitors">
+                    <i class="bi bi-display me-1"></i> Bağlı Monitörler (Seri No)
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPeripherals">
+                    <i class="bi bi-usb-symbol me-1"></i> USB & Yazıcılar
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabSoftware">
+                    <i class="bi bi-box me-1"></i> Kurulu Programlar
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body">
+        <div class="tab-content" id="pcTabsContent">
+            <!-- 1. System Tab -->
+            <div class="tab-pane fade show active" id="tabSystem">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-3">BİLGİSAYAR & ANAKART</h6>
+                        <table class="table table-sm table-bordered">
+                            <tr><th class="bg-light" width="40%">Bilgisayar Adı</th><td id="resComputerName" class="fw-bold"></td></tr>
+                            <tr><th class="bg-light">Üretici</th><td id="resManufacturer"></td></tr>
+                            <tr><th class="bg-light">Model</th><td id="resModel"></td></tr>
+                            <tr><th class="bg-light">Seri Numarası</th><td id="resSerial" class="font-monospace text-primary fw-bold"></td></tr>
+                            <tr><th class="bg-light">Domain / Workgroup</th><td id="resDomain"></td></tr>
+                            <tr><th class="bg-light">Aktif Oturum Açan</th><td id="resUser"></td></tr>
+                            <tr><th class="bg-light">Anakart</th><td id="resMotherboard"></td></tr>
+                            <tr><th class="bg-light">BIOS Sürümü</th><td id="resBios"></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-3">İŞLETİM SİSTEMİ</h6>
+                        <table class="table table-sm table-bordered">
+                            <tr><th class="bg-light" width="40%">İşletim Sistemi</th><td id="resOsName" class="fw-bold"></td></tr>
+                            <tr><th class="bg-light">Sürüm & Build</th><td id="resOsBuild"></td></tr>
+                            <tr><th class="bg-light">Mimari</th><td id="resOsArch"></td></tr>
+                            <tr><th class="bg-light">Kurulum Tarihi</th><td id="resInstallDate"></td></tr>
+                            <tr><th class="bg-light">Son Başlatma</th><td id="resLastBoot"></td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. CPU & RAM Tab -->
+            <div class="tab-pane fade" id="tabCpuRam">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-3">İŞLEMCİ (CPU)</h6>
+                        <div class="card bg-light p-3 border-0">
+                            <h5 class="fw-bold text-dark mb-2" id="resCpuName"></h5>
+                            <div class="d-flex gap-3 mb-2">
+                                <span class="badge bg-primary fs-6" id="resCpuCores"></span>
+                                <span class="badge bg-info text-dark fs-6" id="resCpuThreads"></span>
+                                <span class="badge bg-secondary fs-6" id="resCpuSpeed"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-3">BELLEK (RAM) & SLOTLAR</h6>
+                        <div class="alert alert-info py-2 fw-bold">
+                            Toplam RAM Kapasitesi: <span id="resRamTotal" class="fs-5"></span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr><th>Slot</th><th>Kapasite</th><th>Hız</th><th>Üretici</th><th>Parça No</th></tr>
+                                </thead>
+                                <tbody id="ramSlotsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Disks Tab -->
+            <div class="tab-pane fade" id="tabDisks">
+                <h6 class="fw-bold text-primary mb-3">FİZİKSEL DİSKLER & MANTIKSAL SÜRÜCÜLER</h6>
+                <div id="disksContainer" class="row g-3"></div>
+            </div>
+
+            <!-- 4. Monitors Tab -->
+            <div class="tab-pane fade" id="tabMonitors">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-primary mb-0">BAĞLI MONİTÖRLER (WMI EDID ÇÖZÜMLEME)</h6>
+                    <small class="text-muted">Monitörün kendi iç çipinden okunan fabrika seri numaraları</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Üretici / Marka</th>
+                                <th>Monitör Modeli</th>
+                                <th>Seri Numarası</th>
+                                <th>Üretim Yılı / Haftası</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monitorsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 5. Peripherals (USB & Printers) -->
+            <div class="tab-pane fade" id="tabPeripherals">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-3">YAZICILAR</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr><th>Yazıcı Adı</th><th>Sürücü</th><th>Port</th><th>Varsayılan</th></tr>
+                                </thead>
+                                <tbody id="printersBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="fw-bold text-primary mb-3">TAKILI USB AYGITLARI</h6>
+                        <div class="table-responsive" style="max-height: 400px; overflow-y:auto;">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr><th>Aygıt Adı</th><th>Açıklama</th><th>Durum</th></tr>
+                                </thead>
+                                <tbody id="usbBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. Software Tab -->
+            <div class="tab-pane fade" id="tabSoftware">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-primary mb-0">KURULU YAZILIMLAR</h6>
+                    <button class="btn btn-sm btn-outline-primary" onclick="loadSoftware()">
+                        <i class="bi bi-arrow-repeat me-1"></i> Program Listesini Getir
+                    </button>
+                </div>
+                <div id="softwareLoading" class="text-center py-4" style="display:none;">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="small text-muted mt-2">Kayıt defterinden kurulu programlar okunuyor...</p>
+                </div>
+                <div class="table-responsive" style="max-height: 450px; overflow-y:auto;">
+                    <table class="table table-sm table-hover table-bordered" id="softwareTable">
+                        <thead class="table-light sticky-top">
+                            <tr><th>Yazılım Adı</th><th>Sürüm</th><th>Yayıncı</th><th>Kurulum Tarihi</th></tr>
+                        </thead>
+                        <tbody id="softwareBody">
+                            <tr><td colspan="4" class="text-center py-4 text-muted">Program listesini getirmek için yukarıdaki butona tıklayın.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    let currentComputer = null;
+
+    function toggleCredentials(cb) {
+        document.getElementById('credentialsRow').style.display = cb.checked ? 'none' : 'flex';
+    }
+
+    async function queryPc() {
+        const target = document.getElementById('target').value.trim();
+        if (!target) {
+            alert('Lütfen bir IP veya bilgisayar adı girin.');
+            return;
+        }
+
+        const useCurrent = document.getElementById('useCurrentUser').checked;
+        const user = document.getElementById('username').value.trim();
+        const domain = document.getElementById('domain').value.trim();
+        const pass = document.getElementById('password').value;
+
+        document.getElementById('loadingCard').style.display = 'block';
+        document.getElementById('resultCard').style.display = 'none';
+        document.getElementById('errorAlert').style.display = 'none';
+        document.getElementById('exportButtons').style.setProperty('display', 'none', 'important');
+
+        try {
+            const res = await fetch('/Inspector/Query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    Target: target,
+                    UseCurrentUser: useCurrent,
+                    Username: user,
+                    Domain: domain,
+                    Password: pass
+                })
+            });
+
+            const data = await res.json();
+            document.getElementById('loadingCard').style.display = 'none';
+
+            if (data.success && data.data) {
+                currentComputer = data.data;
+                renderComputerData(data.data);
+                document.getElementById('resultCard').style.display = 'block';
+                document.getElementById('exportButtons').style.setProperty('display', 'flex', 'important');
+            } else {
+                document.getElementById('errorAlert').innerText = data.message || 'Bilgisayara ulaşılamadı.';
+                document.getElementById('errorAlert').style.display = 'block';
+            }
+        } catch (err) {
+            document.getElementById('loadingCard').style.display = 'none';
+            document.getElementById('errorAlert').innerText = 'İstek başarısız oldu: ' + err.message;
+            document.getElementById('errorAlert').style.display = 'block';
+        }
+    }
+
+    function renderComputerData(pc) {
+        // System
+        document.getElementById('resComputerName').innerText = pc.ComputerName || '—';
+        document.getElementById('resManufacturer').innerText = pc.Manufacturer || '—';
+        document.getElementById('resModel').innerText = pc.Model || '—';
+        document.getElementById('resSerial').innerText = pc.SerialNumber || '—';
+        document.getElementById('resDomain').innerText = pc.Domain || pc.Workgroup || '—';
+        document.getElementById('resUser').innerText = pc.CurrentUser || pc.LastUser || '—';
+        document.getElementById('resMotherboard').innerText = pc.Motherboard ? `${pc.Motherboard.Manufacturer} ${pc.Motherboard.Product}` : '—';
+        document.getElementById('resBios').innerText = pc.Bios ? `${pc.Bios.Manufacturer} ${pc.Bios.Version}` : '—';
+
+        // Windows
+        if (pc.Windows) {
+            document.getElementById('resOsName').innerText = pc.Windows.Caption;
+            document.getElementById('resOsBuild').innerText = `${pc.Windows.DisplayVersion || pc.Windows.Version} (Build ${pc.Windows.BuildNumber})`;
+            document.getElementById('resOsArch').innerText = pc.Windows.Architecture;
+            document.getElementById('resInstallDate').innerText = pc.Windows.InstallDate || '—';
+            document.getElementById('resLastBoot').innerText = pc.Windows.LastBootTime || '—';
+        }
+
+        // CPU
+        if (pc.Cpu) {
+            document.getElementById('resCpuName').innerText = pc.Cpu.Name;
+            document.getElementById('resCpuCores').innerText = `${pc.Cpu.Cores} Fiziksel Çekirdek`;
+            document.getElementById('resCpuThreads').innerText = `${pc.Cpu.Threads} Mantıksal İşlemci`;
+            document.getElementById('resCpuSpeed').innerText = pc.Cpu.MaxSpeedGhz;
+        }
+
+        // RAM
+        if (pc.Memory) {
+            document.getElementById('resRamTotal').innerText = `${pc.Memory.TotalGb.toFixed(1)} GB`;
+            const tbody = document.getElementById('ramSlotsBody');
+            tbody.innerHTML = '';
+            pc.Memory.Slots.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${s.Tag}</strong></td>
+                    <td>${s.CapacityGb.toFixed(1)} GB</td>
+                    <td>${s.SpeedMhz} MHz</td>
+                    <td>${s.Manufacturer}</td>
+                    <td class="font-monospace">${s.PartNumber || '—'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Disks
+        const diskContainer = document.getElementById('disksContainer');
+        diskContainer.innerHTML = '';
+        if (pc.Disks && pc.Disks.length > 0) {
+            pc.Disks.forEach((d, idx) => {
+                const col = document.createElement('div');
+                col.className = 'col-md-6';
+                let logDisksHtml = '';
+
+                if (d.LogicalDisks && d.LogicalDisks.length > 0) {
+                    d.LogicalDisks.forEach(ld => {
+                        const usedPct = ld.UsedPercent.toFixed(0);
+                        logDisksHtml += `
+                            <div class="mt-2 border-top pt-2">
+                                <div class="d-flex justify-content-between small fw-semibold">
+                                    <span>${ld.DriveLetter} (${ld.Label || 'Yerel Disk'})</span>
+                                    <span>${ld.FreeSpaceGb.toFixed(1)} GB boş / ${ld.TotalSizeGb.toFixed(1)} GB</span>
+                                </div>
+                                <div class="progress mt-1" style="height: 8px;">
+                                    <div class="progress-bar ${usedPct > 85 ? 'bg-danger' : 'bg-primary'}" style="width: ${usedPct}%"></div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                col.innerHTML = `
+                    <div class="card p-3 border">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-bold"><i class="bi bi-hdd me-1"></i> Disk #${idx}: ${d.Model}</span>
+                            <span class="badge bg-dark">${d.MediaType || 'Disk'} - ${d.TotalSizeGb} GB</span>
+                        </div>
+                        <div class="small text-muted mb-2">Seri No: <code class="text-primary">${d.SerialNumber || '—'}</code> | Arayüz: ${d.InterfaceType}</div>
+                        ${logDisksHtml}
+                    </div>
+                `;
+                diskContainer.appendChild(col);
+            });
+        }
+
+        // Monitors (EDID decoded)
+        const monBody = document.getElementById('monitorsBody');
+        monBody.innerHTML = '';
+        if (pc.Monitors && pc.Monitors.length > 0) {
+            pc.Monitors.forEach((m, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td><strong>${m.Manufacturer}</strong></td>
+                    <td>${m.Model}</td>
+                    <td class="font-monospace fw-bold text-primary fs-6">${m.SerialNumber}</td>
+                    <td>${m.YearOfManufacture ? `${m.YearOfManufacture} (Hafta ${m.WeekOfManufacture})` : '—'}</td>
+                    <td><span class="badge bg-success">Bağlı & Aktif</span></td>
+                `;
+                monBody.appendChild(tr);
+            });
+        } else {
+            monBody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">Bağlı monitör bilgisi alınamadı veya monitör sürücüsü desteklenmiyor.</td></tr>';
+        }
+
+        // Printers
+        const prnBody = document.getElementById('printersBody');
+        prnBody.innerHTML = '';
+        if (pc.Printers && pc.Printers.length > 0) {
+            pc.Printers.forEach(pr => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${pr.Name}</strong></td>
+                    <td>${pr.DriverName}</td>
+                    <td>${pr.PortName}</td>
+                    <td>${pr.IsDefault ? '<span class="badge bg-success">Varsayılan</span>' : '—'}</td>
+                `;
+                prnBody.appendChild(tr);
+            });
+        } else {
+            prnBody.innerHTML = '<tr><td colspan="4" class="text-center py-2 text-muted">Tanımlı yazıcı bulunamadı.</td></tr>';
+        }
+
+        // USB Devices
+        const usbBody = document.getElementById('usbBody');
+        usbBody.innerHTML = '';
+        if (pc.UsbDevices && pc.UsbDevices.length > 0) {
+            pc.UsbDevices.forEach(u => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${u.Name}</strong></td>
+                    <td class="small text-muted">${u.Description || u.Manufacturer}</td>
+                    <td><span class="badge bg-light text-dark">${u.Status}</span></td>
+                `;
+                usbBody.appendChild(tr);
+            });
+        } else {
+            usbBody.innerHTML = '<tr><td colspan="3" class="text-center py-2 text-muted">USB aygıtı bulunamadı.</td></tr>';
+        }
+    }
+
+    async function loadSoftware() {
+        const target = document.getElementById('target').value.trim();
+        const useCurrent = document.getElementById('useCurrentUser').checked;
+        const user = document.getElementById('username').value.trim();
+        const domain = document.getElementById('domain').value.trim();
+        const pass = document.getElementById('password').value;
+
+        document.getElementById('softwareLoading').style.display = 'block';
+        const tbody = document.getElementById('softwareBody');
+        tbody.innerHTML = '';
+
+        try {
+            const res = await fetch('/Inspector/GetSoftware', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    Target: target,
+                    UseCurrentUser: useCurrent,
+                    Username: user,
+                    Domain: domain,
+                    Password: pass
+                })
+            });
+
+            const data = await res.json();
+            document.getElementById('softwareLoading').style.display = 'none';
+
+            if (data.success && data.data && data.data.length > 0) {
+                data.data.forEach(s => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${s.Name}</strong></td>
+                        <td class="font-monospace">${s.Version || '—'}</td>
+                        <td>${s.Publisher || '—'}</td>
+                        <td>${s.InstallDate || '—'}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3 text-muted">Kurulu program bulunamadı.</td></tr>';
+            }
+        } catch (e) {
+            document.getElementById('softwareLoading').style.display = 'none';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3 text-danger">Programlar yüklenirken hata oluştu.</td></tr>';
+        }
+    }
+
+    function downloadExport(type) {
+        const target = document.getElementById('target').value.trim();
+        const user = document.getElementById('username').value.trim();
+        const domain = document.getElementById('domain').value.trim();
+        const pass = document.getElementById('password').value;
+
+        const url = `/Inspector/Export${type === 'excel' ? 'Excel' : 'Pdf'}?target=${encodeURIComponent(target)}&user=${encodeURIComponent(user)}&domain=${encodeURIComponent(domain)}&pass=${encodeURIComponent(pass)}`;
+        window.open(url, '_blank');
+    }
+
+    // Auto-run if IP passed in query
+    document.addEventListener('DOMContentLoaded', () => {
+        const t = document.getElementById('target').value;
+        if (t) queryPc();
+    });
+</script>
+}

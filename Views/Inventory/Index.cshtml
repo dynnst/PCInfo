@@ -1,0 +1,554 @@
+@model List<PCNetworkInspector.Data.Entities.DeviceEntity>
+@{
+    ViewData["Title"] = "Şube Müdürlüğü Envanter Yönetimi";
+    var selectedCat = ViewBag.SelectedCategory as AssetCategory?;
+    var selectedStatus = ViewBag.SelectedStatus as AssetStatus?;
+    var selectedLocation = ViewBag.SelectedLocation as string;
+    var search = ViewBag.Search as string;
+    var locations = ViewBag.Locations as List<string> ?? new List<string>();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-1"><i class="bi bi-box-seam text-primary me-2"></i>Şube Müdürlüğü Donanım Envanteri</h3>
+        <p class="text-muted mb-0">Bilgisayarlar, monitörler, kameralar, optik okuyucular, parmak izi cihazları ve çevre donanımları</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-primary d-flex align-items-center gap-2" onclick="openAddModal()">
+            <i class="bi bi-plus-circle-fill"></i> Yeni Cihaz / Demirbaş Ekle
+        </button>
+        <a asp-action="ExportExcel" asp-route-search="@search" asp-route-category="@selectedCat" asp-route-status="@selectedStatus" asp-route-location="@selectedLocation" class="btn btn-outline-success d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-excel"></i> Excel İndir
+        </a>
+        <a asp-action="ExportPdf" asp-route-search="@search" asp-route-category="@selectedCat" asp-route-status="@selectedStatus" asp-route-location="@selectedLocation" class="btn btn-outline-danger d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-pdf"></i> PDF Raporu
+        </a>
+    </div>
+</div>
+
+<!-- Filters Bar -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-md-3">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control" placeholder="Demirbaş, Seri No, Marka, Zimmet..." value="@search" />
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select name="category" class="form-select">
+                    <option value="">Tüm Donanım Kategorileri</option>
+                    @foreach (AssetCategory cat in Enum.GetValues(typeof(AssetCategory)))
+                    {
+                        <option value="@((int)cat)" selected="@(selectedCat == cat)">@cat.GetCategoryName()</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="status" class="form-select">
+                    <option value="">Tüm Durumlar</option>
+                    @foreach (AssetStatus st in Enum.GetValues(typeof(AssetStatus)))
+                    {
+                        <option value="@((int)st)" selected="@(selectedStatus == st)">@st.GetStatusName()</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="location" class="form-select">
+                    <option value="">Tüm Mevkiler / Odalar</option>
+                    @foreach (var loc in locations)
+                    {
+                        <option value="@loc" selected="@(selectedLocation == loc)">@loc</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary w-100 fw-semibold">Filtrele</button>
+                <a asp-action="Index" class="btn btn-light border" title="Sıfırla"><i class="bi bi-arrow-counterclockwise"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Main Inventory Table -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+        <span class="fw-bold text-dark">Envanter Listesi (<strong class="text-primary">@Model.Count</strong> Cihaz Bulundu)</span>
+        <div class="small text-muted">
+            <i class="bi bi-info-circle me-1"></i>Her cihazın fotoğrafını, mevkisini ve doğrudan erişim bağlantılarını inceleyebilirsiniz.
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="65">Fotoğraf</th>
+                        <th>Demirbaş No</th>
+                        <th>Kategori</th>
+                        <th>Marka / Model</th>
+                        <th>Seri Numarası</th>
+                        <th>Mevki (Kurulduğu Yer)</th>
+                        <th>Zimmetli Personel</th>
+                        <th>Durum</th>
+                        <th>Tedarik / Teslim</th>
+                        <th class="text-center" width="130">Cihaza Erişim</th>
+                        <th class="text-end" width="100">İşlemler</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="11" class="text-center py-5 text-muted">
+                                <i class="bi bi-box-seam fs-1 d-block mb-3 text-secondary"></i>
+                                Aradığınız kriterlere uygun envanter kaydı bulunamadı.<br />
+                                <button type="button" class="btn btn-primary btn-sm mt-3" onclick="openAddModal()">
+                                    <i class="bi bi-plus-circle me-1"></i> Yeni Cihaz Kaydet
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var d in Model)
+                        {
+                            <tr id="row-@d.Id">
+                                <!-- Fotoğraf -->
+                                <td>
+                                    @if (!string.IsNullOrWhiteSpace(d.ImagePath))
+                                    {
+                                        <a href="@d.ImagePath" target="_blank" title="Fotoğrafı Büyüt">
+                                            <img src="@d.ImagePath" class="rounded border shadow-sm" style="width: 50px; height: 50px; object-fit: cover;" />
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <div class="bg-light text-secondary rounded d-flex align-items-center justify-content-center border" style="width: 50px; height: 50px;">
+                                            <i class="bi @d.Category.GetCategoryIcon() fs-4"></i>
+                                        </div>
+                                    }
+                                </td>
+
+                                <!-- Demirbaş No -->
+                                <td class="font-monospace fw-bold text-dark">
+                                    @(string.IsNullOrWhiteSpace(d.AssetTag) ? "—" : d.AssetTag)
+                                </td>
+
+                                <!-- Kategori -->
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        <i class="bi @d.Category.GetCategoryIcon() me-1"></i>
+                                        @d.Category.GetCategoryName()
+                                    </span>
+                                </td>
+
+                                <!-- Marka / Model -->
+                                <td>
+                                    <div class="fw-bold">@d.Brand</div>
+                                    <small class="text-muted">@d.Model</small>
+                                </td>
+
+                                <!-- Seri No -->
+                                <td class="font-monospace fw-semibold text-primary">
+                                    @(string.IsNullOrWhiteSpace(d.SerialNumber) ? "—" : d.SerialNumber)
+                                </td>
+
+                                <!-- Mevki / Kurulduğu Yer -->
+                                <td>
+                                    <div class="fw-semibold text-dark"><i class="bi bi-geo-alt-fill text-danger me-1"></i>@d.Location</div>
+                                    @if (!string.IsNullOrWhiteSpace(d.RoomNumber))
+                                    {
+                                        <small class="text-muted">Oda: @d.RoomNumber</small>
+                                    }
+                                </td>
+
+                                <!-- Zimmetli Personel -->
+                                <td>
+                                    <div class="fw-semibold text-dark">@(string.IsNullOrWhiteSpace(d.AssignedPerson) ? "—" : d.AssignedPerson)</div>
+                                </td>
+
+                                <!-- Durum -->
+                                <td>
+                                    <span class="@d.Status.GetStatusBadgeClass()">
+                                        @d.Status.GetStatusName()
+                                    </span>
+                                </td>
+
+                                <!-- Tedarik / Teslim Tarihleri -->
+                                <td class="small text-muted">
+                                    @if (d.DeliveryDate.HasValue)
+                                    {
+                                        <div><strong>Teslim:</strong> @d.DeliveryDate.Value.ToString("dd.MM.yyyy")</div>
+                                    }
+                                    @if (d.ProcurementDate.HasValue)
+                                    {
+                                        <div><strong>Tedarik:</strong> @d.ProcurementDate.Value.ToString("dd.MM.yyyy")</div>
+                                    }
+                                    @if (!d.DeliveryDate.HasValue && !d.ProcurementDate.HasValue)
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+
+                                <!-- Doğrudan Cihaza Erişim Butonları -->
+                                <td class="text-center">
+                                    @if (!string.IsNullOrWhiteSpace(d.IpAddress))
+                                    {
+                                        <div class="btn-group btn-group-sm">
+                                            @if (d.Category == AssetCategory.DesktopPc || d.Category == AssetCategory.Laptop || d.Category == AssetCategory.Server)
+                                            {
+                                                <!-- WMI Canlı Donanım Tara -->
+                                                <a asp-controller="Inspector" asp-action="Index" asp-route-ip="@d.IpAddress" class="btn btn-outline-primary" title="Canlı Donanım Tara (WMI)">
+                                                    <i class="bi bi-cpu"></i>
+                                                </a>
+                                                <!-- Uzak Masaüstü RDP İndir -->
+                                                <a asp-action="DownloadRdp" asp-route-ip="@d.IpAddress" class="btn btn-outline-secondary" title="Uzak Masaüstü Bağlantısı (.RDP)">
+                                                    <i class="bi bi-display"></i>
+                                                </a>
+                                            }
+                                            else if (d.Category == AssetCategory.Camera)
+                                            {
+                                                <!-- Kamera Canlı Önizleme -->
+                                                <a asp-controller="Camera" asp-action="Index" asp-route-ip="@d.IpAddress" class="btn btn-outline-warning" title="Kamera Canlı Görüntüsü & ISAPI">
+                                                    <i class="bi bi-camera-video-fill"></i>
+                                                </a>
+                                            }
+                                            else
+                                            {
+                                                <!-- Web Yönetim Paneli -->
+                                                <a href="http://@d.IpAddress" target="_blank" class="btn btn-outline-info" title="Cihaz Web Arayüzünü Aç (http://@d.IpAddress)">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                </a>
+                                            }
+                                        </div>
+                                        <div class="font-monospace small text-muted mt-1" style="font-size:0.75rem;">@d.IpAddress</div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">Ağsız Donanım</span>
+                                    }
+                                </td>
+
+                                <!-- İşlemler -->
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="viewDetails(@d.Id)" title="Detaylı İncele">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary" onclick="editDeviceModal(@d.Id)" title="Düzenle">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-danger" onclick="deleteDevice(@d.Id, '@d.Brand @d.Model')" title="Sil">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add / Edit Asset Modal -->
+<div class="modal fade" id="assetModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form asp-action="Save" method="post" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="assetModalTitle"><i class="bi bi-plus-circle text-primary me-2"></i>Yeni Donanım / Demirbaş Ekle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="Id" id="fId" value="0" />
+
+                    <div class="row g-3">
+                        <!-- Kategori & Demirbaş -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Cihaz Kategorisi *</label>
+                            <select name="Category" id="fCategory" class="form-select" required>
+                                <option value="1">🖥️ Masaüstü Bilgisayar</option>
+                                <option value="2">💻 Dizüstü Bilgisayar (Laptop)</option>
+                                <option value="3">🖥️ Monitör</option>
+                                <option value="4">📹 IP Kamera (Hikvision vb.)</option>
+                                <option value="5">📑 Optik Okuyucu (OMR / Sınav)</option>
+                                <option value="6">👆 Parmak İzi / Biyometrik Cihaz (PDKS)</option>
+                                <option value="7">🖨️ Yazıcı / Tarayıcı</option>
+                                <option value="8">⚡ Kesintisiz Güç Kaynağı (UPS)</option>
+                                <option value="9">🌐 Switch / Router / Ağ Cihazı</option>
+                                <option value="10">🗄️ Sunucu (Server)</option>
+                                <option value="99">📦 Diğer Donanım</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Demirbaş / Barkod No</label>
+                            <input type="text" name="AssetTag" id="fAssetTag" class="form-control" placeholder="Örn: DMB-2024-0105" />
+                        </div>
+
+                        <!-- Marka & Model -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Marka / Üretici *</label>
+                            <input type="text" name="Brand" id="fBrand" class="form-control" placeholder="Örn: Dell, HP, Hikvision, Sekonic, ZKTeco" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Model *</label>
+                            <input type="text" name="Model" id="fModel" class="form-control" placeholder="Örn: OptiPlex 7090, DS-2CD2143G0-I, SR-5500" required />
+                        </div>
+
+                        <!-- Seri Numarası & Durum -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Seri Numarası (S/N) *</label>
+                            <input type="text" name="SerialNumber" id="fSerialNumber" class="form-control font-monospace" placeholder="Cihazın fabrika seri numarası" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Cihazın Durumu *</label>
+                            <select name="Status" id="fStatus" class="form-select" required>
+                                <option value="1">🟢 Kullanımda / Faal</option>
+                                <option value="2">🔵 Depoda / Yedek</option>
+                                <option value="3">🟡 Arızalı / Tamirde</option>
+                                <option value="4">🔴 Hurda / HEK</option>
+                            </select>
+                        </div>
+
+                        <!-- Mevki & Oda No -->
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold text-danger"><i class="bi bi-geo-alt-fill me-1"></i>Mevki / Kurulduğu Yer *</label>
+                            <input type="text" name="Location" id="fLocation" class="form-control" placeholder="Örn: Ana Bina 2. Kat - Şube Müdürü Odası, Sınav Birimi, Danışma" required />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Oda / Birim No</label>
+                            <input type="text" name="RoomNumber" id="fRoomNumber" class="form-control" placeholder="Örn: 204, Z-05" />
+                        </div>
+
+                        <!-- Zimmetli Personel -->
+                        <div class="col-md-12">
+                            <label class="form-label fw-bold"><i class="bi bi-person-fill text-primary me-1"></i>Zimmetli Personel / Kullanıcı</label>
+                            <input type="text" name="AssignedPerson" id="fAssignedPerson" class="form-control" placeholder="Örn: Ahmet YILMAZ - Şube Müdürü (Sicil: 12345)" />
+                        </div>
+
+                        <!-- Tarihler -->
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Tedarik Tarihi</label>
+                            <input type="date" name="ProcurementDate" id="fProcurementDate" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Teslim Tarihi</label>
+                            <input type="date" name="DeliveryDate" id="fDeliveryDate" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Garanti Bitiş Tarihi</label>
+                            <input type="date" name="WarrantyExpiryDate" id="fWarrantyExpiryDate" class="form-control" />
+                        </div>
+
+                        <!-- Ağ Bilgileri (Varsa) -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">IP Adresi (Varsa)</label>
+                            <input type="text" name="IpAddress" id="fIpAddress" class="form-control font-monospace" placeholder="Örn: 10.7.202.45" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">MAC Adresi</label>
+                            <input type="text" name="MacAddress" id="fMacAddress" class="form-control font-monospace" placeholder="Örn: 00:1A:2B:3C:4D:5E" />
+                        </div>
+
+                        <!-- Resim / Fotoğraf Yükleme -->
+                        <div class="col-md-12">
+                            <label class="form-label fw-bold text-success"><i class="bi bi-camera me-1"></i>Cihazın / Bulunduğu Yerin Fotoğrafı</label>
+                            <input type="file" name="imageFile" id="fImageFile" class="form-control" accept="image/*" />
+                            <div class="form-text">Cihazın kendisinin veya kurulduğu odadaki yerinin fotoğrafını yükleyebilirsiniz (.jpg, .png).</div>
+                        </div>
+
+                        <!-- Notlar -->
+                        <div class="col-md-12">
+                            <label class="form-label fw-semibold">Açıklama & Özel Notlar</label>
+                            <textarea name="Notes" id="fNotes" class="form-control" rows="2" placeholder="Cihaz özellikleri, aksesuar durumu vb..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">İptal</button>
+                    <button type="submit" class="btn btn-primary px-4 fw-semibold"><i class="bi bi-save me-1"></i> Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Detail View Modal -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="detTitle"><i class="bi bi-info-circle text-primary me-2"></i>Demirbaş & Cihaz Detay Kartı</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detBody">
+                <div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    const assetModal = new bootstrap.Modal(document.getElementById('assetModal'));
+    const detailModal = new bootstrap.Modal(document.getElementById('detailModal'));
+
+    function openAddModal() {
+        document.getElementById('assetModalTitle').innerHTML = '<i class="bi bi-plus-circle text-primary me-2"></i>Yeni Donanım / Demirbaş Ekle';
+        document.getElementById('fId').value = "0";
+        document.getElementById('fAssetTag').value = "";
+        document.getElementById('fCategory').value = "1";
+        document.getElementById('fBrand').value = "";
+        document.getElementById('fModel').value = "";
+        document.getElementById('fSerialNumber').value = "";
+        document.getElementById('fLocation').value = "";
+        document.getElementById('fRoomNumber').value = "";
+        document.getElementById('fAssignedPerson').value = "";
+        document.getElementById('fProcurementDate').value = "";
+        document.getElementById('fDeliveryDate').value = "";
+        document.getElementById('fWarrantyExpiryDate').value = "";
+        document.getElementById('fStatus').value = "1";
+        document.getElementById('fIpAddress').value = "";
+        document.getElementById('fMacAddress').value = "";
+        document.getElementById('fNotes').value = "";
+        document.getElementById('fImageFile').value = "";
+        assetModal.show();
+    }
+
+    async function editDeviceModal(id) {
+        const res = await fetch(`/Inventory/GetDetails?id=${id}`);
+        if (!res.ok) return;
+
+        const d = await res.json();
+        document.getElementById('assetModalTitle').innerHTML = '<i class="bi bi-pencil-square text-primary me-2"></i>Donanım Kaydını Düzenle';
+        document.getElementById('fId').value = d.Id;
+        document.getElementById('fAssetTag').value = d.AssetTag || '';
+        document.getElementById('fCategory').value = d.Category;
+        document.getElementById('fBrand').value = d.Brand || '';
+        document.getElementById('fModel').value = d.Model || '';
+        document.getElementById('fSerialNumber').value = d.SerialNumber || '';
+        document.getElementById('fLocation').value = d.Location || '';
+        document.getElementById('fRoomNumber').value = d.RoomNumber || '';
+        document.getElementById('fAssignedPerson').value = d.AssignedPerson || '';
+        document.getElementById('fProcurementDate').value = d.ProcurementDate ? d.ProcurementDate.split('T')[0] : '';
+        document.getElementById('fDeliveryDate').value = d.DeliveryDate ? d.DeliveryDate.split('T')[0] : '';
+        document.getElementById('fWarrantyExpiryDate').value = d.WarrantyExpiryDate ? d.WarrantyExpiryDate.split('T')[0] : '';
+        document.getElementById('fStatus').value = d.Status;
+        document.getElementById('fIpAddress').value = d.IpAddress || '';
+        document.getElementById('fMacAddress').value = d.MacAddress || '';
+        document.getElementById('fNotes').value = d.Notes || '';
+        document.getElementById('fImageFile').value = '';
+        assetModal.show();
+    }
+
+    async function viewDetails(id) {
+        detailModal.show();
+        const body = document.getElementById('detBody');
+        body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></div>';
+
+        const res = await fetch(`/Inventory/GetDetails?id=${id}`);
+        if (!res.ok) {
+            body.innerHTML = '<div class="alert alert-danger">Detay yüklenemedi.</div>';
+            return;
+        }
+
+        const d = await res.json();
+        document.getElementById('detTitle').innerText = `${d.Brand} ${d.Model} (${d.SerialNumber || 'Seri No Yok'})`;
+
+        let imgHtml = '';
+        if (d.ImagePath) {
+            imgHtml = `
+                <div class="col-md-5">
+                    <div class="card p-2 bg-light border-0">
+                        <img src="${d.ImagePath}" class="img-fluid rounded border shadow-sm" style="max-height: 350px; width: 100%; object-fit: cover;" />
+                        <small class="text-muted text-center d-block mt-1">Cihaz / Kurulum Yeri Fotoğrafı</small>
+                    </div>
+                </div>
+            `;
+        }
+
+        let remoteAccessHtml = '';
+        if (d.IpAddress) {
+            remoteAccessHtml = `
+                <div class="alert alert-light border mt-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong><i class="bi bi-broadcast text-success me-1"></i>Ağ Bağlantısı:</strong>
+                        <code class="fs-6 ms-2">${d.IpAddress}</code>
+                    </div>
+                    <div class="d-flex gap-2">
+                        ${(d.Category === 1 || d.Category === 2 || d.Category === 10) ? `
+                            <a href="/Inspector/Index?ip=${d.IpAddress}" class="btn btn-sm btn-primary"><i class="bi bi-cpu me-1"></i> Donanımı Tara (WMI)</a>
+                            <a href="/Inventory/DownloadRdp?ip=${d.IpAddress}" class="btn btn-sm btn-secondary"><i class="bi bi-display me-1"></i> RDP İndir</a>
+                        ` : ''}
+                        ${d.Category === 4 ? `
+                            <a href="/Camera/Index?ip=${d.IpAddress}" class="btn btn-sm btn-warning"><i class="bi bi-camera-video me-1"></i> Canlı Kamera İzle</a>
+                        ` : ''}
+                        <a href="http://${d.IpAddress}" target="_blank" class="btn btn-sm btn-outline-info"><i class="bi bi-box-arrow-up-right me-1"></i> Web Panelini Aç</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        body.innerHTML = `
+            <div class="row g-3">
+                ${imgHtml}
+                <div class="${d.ImagePath ? 'col-md-7' : 'col-md-12'}">
+                    <table class="table table-sm table-bordered">
+                        <tr><th class="bg-light" width="35%">Demirbaş No</th><td class="fw-bold font-monospace">${d.AssetTag || '—'}</td></tr>
+                        <tr><th class="bg-light">Kategori</th><td>${getCategoryLabel(d.Category)}</td></tr>
+                        <tr><th class="bg-light">Marka & Model</th><td><strong>${d.Brand}</strong> ${d.Model}</td></tr>
+                        <tr><th class="bg-light">Seri Numarası</th><td class="font-monospace text-primary fw-bold">${d.SerialNumber || '—'}</td></tr>
+                        <tr><th class="bg-light">Mevki / Yer</th><td class="fw-semibold text-danger"><i class="bi bi-geo-alt-fill me-1"></i>${d.Location} ${d.RoomNumber ? `(Oda: ${d.RoomNumber})` : ''}</td></tr>
+                        <tr><th class="bg-light">Zimmetli Personel</th><td class="fw-bold text-dark">${d.AssignedPerson || '—'}</td></tr>
+                        <tr><th class="bg-light">Durum</th><td>${getStatusLabel(d.Status)}</td></tr>
+                        <tr><th class="bg-light">Teslim Tarihi</th><td>${d.DeliveryDate ? d.DeliveryDate.split('T')[0] : '—'}</td></tr>
+                        <tr><th class="bg-light">Tedarik Tarihi</th><td>${d.ProcurementDate ? d.ProcurementDate.split('T')[0] : '—'}</td></tr>
+                        <tr><th class="bg-light">Açıklama / Not</th><td>${d.Notes || '—'}</td></tr>
+                    </table>
+                </div>
+            </div>
+            ${remoteAccessHtml}
+        `;
+    }
+
+    function getCategoryLabel(cat) {
+        const names = {
+            1: '🖥️ Masaüstü Bilgisayar',
+            2: '💻 Dizüstü Bilgisayar',
+            3: '🖥️ Monitör',
+            4: '📹 IP Kamera (Hikvision vb.)',
+            5: '📑 Optik Okuyucu (OMR / Sınav)',
+            6: '👆 Parmak İzi / PDKS',
+            7: '🖨️ Yazıcı / Tarayıcı',
+            8: '⚡ Güç Kaynağı (UPS)',
+            9: '🌐 Switch / Router',
+            10: '🗄️ Sunucu',
+            99: '📦 Diğer Donanım'
+        };
+        return names[cat] || 'Diğer Donanım';
+    }
+
+    function getStatusLabel(st) {
+        if (st === 1) return '<span class="badge bg-success">🟢 Kullanımda / Faal</span>';
+        if (st === 2) return '<span class="badge bg-primary">🔵 Depoda / Yedek</span>';
+        if (st === 3) return '<span class="badge bg-warning text-dark">🟡 Arızalı / Tamirde</span>';
+        if (st === 4) return '<span class="badge bg-danger">🔴 Hurda / HEK</span>';
+        return '<span class="badge bg-secondary">Bilinmiyor</span>';
+    }
+
+    async function deleteDevice(id, name) {
+        if (!confirm(`"${name}" adlı cihaz envanterden silinsin mi?`)) return;
+
+        const res = await fetch(`/Inventory/Delete?id=${id}`, { method: 'POST' });
+        if (res.ok) {
+            document.getElementById(`row-${id}`).remove();
+        } else {
+            alert('Silme sırasında hata oluştu.');
+        }
+    }
+</script>
+}

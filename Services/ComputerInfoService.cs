@@ -13,6 +13,7 @@ namespace PCNetworkInspector.Services
         private readonly IWindowsInfoService _windows;
         private readonly IBiosInfoService _bios;
         private readonly IMotherboardInfoService _motherboard;
+        private readonly IPeripheralInfoService _peripheral;
 
         public ComputerInfoService(
             IWmiService wmi,
@@ -23,7 +24,8 @@ namespace PCNetworkInspector.Services
             INetworkInfoService network,
             IWindowsInfoService windows,
             IBiosInfoService bios,
-            IMotherboardInfoService motherboard)
+            IMotherboardInfoService motherboard,
+            IPeripheralInfoService peripheral)
         {
             _wmi = wmi;
             _cpu = cpu;
@@ -34,6 +36,7 @@ namespace PCNetworkInspector.Services
             _windows = windows;
             _bios = bios;
             _motherboard = motherboard;
+            _peripheral = peripheral;
         }
 
         public async Task<ComputerInfo> GetComputerInfoAsync(
@@ -86,6 +89,12 @@ namespace PCNetworkInspector.Services
                 // Network
                 progress?.Report("Ağ bilgileri alınıyor...");
                 info.NetworkAdapters = await _network.GetNetworkInfoAsync(target, credentials, cancellationToken);
+
+                // Peripherals (Monitors, USB, Printers)
+                progress?.Report("Bağlı monitör ve çevre birimleri alınıyor...");
+                info.Monitors = await _peripheral.GetMonitorsAsync(target, credentials, cancellationToken);
+                info.UsbDevices = await _peripheral.GetUsbDevicesAsync(target, credentials, cancellationToken);
+                info.Printers = await _peripheral.GetPrintersAsync(target, credentials, cancellationToken);
 
                 progress?.Report("Tamamlandı.");
             }

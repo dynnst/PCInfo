@@ -1,0 +1,88 @@
+@model PCNetworkInspector.Models.AppSettings
+@{
+    ViewData["Title"] = "Sistem Ayarları";
+}
+
+<div class="mb-4">
+    <h3 class="fw-bold mb-1">Sistem ve Yapılandırma Ayarları</h3>
+    <p class="text-muted mb-0">SQL Server veritabanı, WMI ve Hikvision kamera varsayılan kimlik ayarları</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-database text-primary"></i>
+                <span class="fw-bold">SQL Server Veritabanı Yapılandırması</span>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Bağlantı Dizesi (Connection String)</label>
+                    <textarea class="form-control font-monospace" rows="3" readonly>@Model.DefaultExportPath</textarea>
+                    <div class="form-text">
+                        Bağlantı dizesi <code>appsettings.json</code> dosyasından okunur. Veritabanı (<code>PCNetworkInventory</code>) ve tablolar (<code>Devices</code>) uygulama başladığında otomatik oluşturulur.
+                    </div>
+                </div>
+
+                <div class="alert alert-success d-flex align-items-center gap-2 mb-0">
+                    <i class="bi bi-check-circle-fill fs-5"></i>
+                    <div>
+                        <strong>SQL Server Durumu:</strong> Yerel MSSQLSERVER servisi aktif ve Windows Kimlik Doğrulaması ile bağlı.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-broadcast text-primary"></i>
+                <span class="fw-bold">Varsayılan Ağ Tarayıcısı Ayarları</span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Varsayılan IP Bloğu</label>
+                        <input type="text" class="form-control font-monospace" value="10.7.202.1 - 10.7.202.500" readonly />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Eşzamanlı Tarama Sayısı</label>
+                        <input type="text" class="form-control" value="@Model.MaxConcurrentConnections Bağlantı" readonly />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle text-primary"></i>
+                <span class="fw-bold">Uygulama Bilgileri</span>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush small">
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span>Uygulama Adı:</span>
+                        <strong class="text-dark">PC Network Inspector</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span>Sürüm:</span>
+                        <strong class="text-dark">2.0 (ASP.NET Core)</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span>Çerçeve:</span>
+                        <strong class="text-dark">.NET 8.0 (Windows x64)</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span>Veritabanı:</span>
+                        <strong class="text-dark">Microsoft SQL Server</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between px-0">
+                        <span>Kamera Desteği:</span>
+                        <strong class="text-dark">Hikvision ISAPI & RTSP</strong>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
